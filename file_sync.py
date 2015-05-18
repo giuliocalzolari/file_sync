@@ -4,13 +4,45 @@ import yaml
 import time
 import os
 import fnmatch
+import subprocess
 from cli.log import LoggingApp
 
 
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
+from threading import Timer
+
 __author__ = ['Giulio.Calzolari']
+
+
+
+
+
+class RepeatedTimer(object):
+    def __init__(self, interval, function, *args, **kwargs):
+        self._timer     = None
+        self.function   = function
+        self.interval   = interval
+        self.args       = args
+        self.kwargs     = kwargs
+        self.is_running = False
+        self.start()
+
+    def _run(self):
+        self.is_running = False
+        self.start()
+        self.function(*self.args, **self.kwargs)
+
+    def start(self):
+        if not self.is_running:
+            self._timer = Timer(self.interval, self._run)
+            self._timer.start()
+            self.is_running = True
+
+    def stop(self):
+        self._timer.cancel()
+        self.is_running = False
 
 
 class ChangeHandler(FileSystemEventHandler):
@@ -227,6 +259,18 @@ class FileSync(LoggingApp):
             self.log.debug(e)
             quit("No Configuration file found at " + self.params.config)
 
+    def execute_cmd(self, cmd):
+        
+        command_run = subprocess.call([cmd] , shell=True)
+        if command_run != 0:
+            self.log.error("error on execute_cmd: " + cmd)
+        else:
+            self.log.debug("success on execute_cmd: " + cmd)
+
+    def job():
+        print("I'm working...")
+
+
     def ec2_update_discovery(self, repl):
         self.log.info("get all instances match: " + repl["match_ec2"])
         return ["web-001.compute-1.amazonaws.com", "web-002.compute-1.amazonaws.com"]
@@ -244,6 +288,11 @@ class FileSync(LoggingApp):
         self.ec2_auto = {}
 
         start = True
+
+        for cmd_name in self.config["command"]:
+            interval = self.config["command"][cmd_name]["refresh"]
+            RepeatedTimer(interval, self.execute_cmd , self.config["command"][cmd_name]["exec"])
+
 
         while 1:
 
@@ -270,7 +319,7 @@ class FileSync(LoggingApp):
                                 start = False
                                 # print self.ec2_auto
 
-                    time.sleep(0.5)
+                    time.sleep(1)
             except KeyboardInterrupt:
                 quit("Exit")
                 observer.stop()
