@@ -77,15 +77,18 @@ class ChangeHandler(FileSystemEventHandler):
 
             if self.current_repl["replace"] != "":
                 file_name = file_name_dest.replace(
-                    self.current_repl["replace"][0], self.current_repl["replace"][1])
+                    self.current_repl["replace"][0],
+                    self.current_repl["replace"][1])
             else:
                 file_name = file_name_dest
 
             self.log.debug(
-                "delete: " + file_name + " from s3 bucket:" + self.current_repl["bucket"])
+                "delete: " + file_name + " from s3 bucket:"
+                + self.current_repl["bucket"])
 
             conn = boto.connect_s3(
-                self.current_repl["acces_key"], self.current_repl["secret_key"])
+                self.current_repl["acces_key"],
+                self.current_repl["secret_key"])
             bucket = conn.get_bucket(self.current_repl["bucket"])
             k = boto.s3.key.Key(bucket)
             k.key = file_name
@@ -101,7 +104,7 @@ class ChangeHandler(FileSystemEventHandler):
             pass
 
     def push_to_sftp(self, sourcepath):
-            # Paramiko client configuration
+        # Paramiko client configuration
         UseGSSAPI = True             # enable GSS-API / SSPI authentication
         DoGSSAPIKeyExchange = True
         Port = 22
@@ -229,16 +232,18 @@ class FileSync(LoggingApp):
 
     def ec2_update_discovery(self, repl):
         self.log.info("get all instances match: " + repl["match_ec2"])
-        return ["web-001.compute-1.amazonaws.com", "web-002.compute-1.amazonaws.com"]
+        return ["web-001.compute-1.amazonaws.com",
+                "web-002.compute-1.amazonaws.com"]
 
 
-#===========================MAIN===========================#
+# ===========================MAIN===========================#
 
     def main(self):
         self.log.info("Starting")
         self.log.debug("Getting Config")
         self.get_config()
-        # self.log.debug("Config: " + str(config['hostname']) + " as " + str(config['username']))
+        # self.log.debug("Config: " + str(config['hostname']) +
+        #  " as " + str(config['username']))
         self.log.debug("directory Selected: " + self.config["basedir"])
 
         self.ec2_auto = {}
@@ -280,7 +285,7 @@ class FileSync(LoggingApp):
         self.log.debug("Finished")
 
 
-#===========================MAGIC==============================#
+# ===========================MAGIC==============================#
 
 if __name__ == "__main__":
     fs = FileSync()
