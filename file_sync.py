@@ -16,10 +16,8 @@ from threading import Timer
 __author__ = ['Giulio.Calzolari']
 
 
-
-
-
 class RepeatedTimer(object):
+
     def __init__(self, interval, function, *args, **kwargs):
         self._timer     = None
         self.function   = function
@@ -263,8 +261,7 @@ class FileSync(LoggingApp):
             quit("No Configuration file found at " + self.params.config)
 
     def execute_cmd(self, cmd):
-        
-        command_run = subprocess.call([cmd] , shell=True)
+        command_run = subprocess.call([cmd], shell=True)
         if command_run != 0:
             self.log.error("error on execute_cmd: " + cmd)
         else:
@@ -272,7 +269,6 @@ class FileSync(LoggingApp):
 
     def job():
         print("I'm working...")
-
 
     def ec2_update_discovery(self, repl):
         self.log.info("get all instances match: " + repl["match_ec2"])
@@ -294,9 +290,13 @@ class FileSync(LoggingApp):
 
         start = True
 
-        for cmd_name in self.config["command"]:
-            interval = self.config["command"][cmd_name]["refresh"]
-            RepeatedTimer(interval, self.execute_cmd , self.config["command"][cmd_name]["exec"])
+        if self.config["command"]:
+            for cmd_name in self.config["command"]:
+                interval = self.config["command"][cmd_name]["refresh"]
+                RepeatedTimer(
+                    interval, self.execute_cmd, self.config["command"][cmd_name]["exec"])
+        else:
+            self.log.debug("No command provided.")
 
 
         while 1:
