@@ -5,6 +5,15 @@ this is an example of config.yaml
 
 	basedir: "/git/tool/file_sync/test_scan"
 	patterns: ["*.txt","*.php"]
+
+	command:
+	 syncs3:
+	  refresh: 3600   # second
+	  exec: "date >> /tmp/tmp.log"
+	 syncs3bis:
+	  refresh: 3600   # second
+	  exec: "date >> /tmp/tmp2.log"
+
 	replicator:
 	 bucket1:
 	  status: "disable"
