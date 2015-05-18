@@ -5,12 +5,12 @@ replicator:
   status: "disable"
   url: "s3://s3-eu-west-1.amazonaws.com"
   bucket: "giulio-bk"
-  acces_key: "....."
-  secret_key: "....."
+  acces_key: "..."
+  secret_key: "...."
   replace: ["/git/tool/",""] 
  ec2web:
   status: "enable"
-  url: "ec2://web-autodiscovery"
+  url: "ec2://web-auto"
   refresh: 60
   match_ec2: "web-[0-9]+"
   acces_key: "key123"
