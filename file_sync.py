@@ -18,6 +18,11 @@ __author__ = ['Giulio.Calzolari']
 
 class RepeatedTimer(object):
 
+    """
+    Not sure what this does, but I feel Giulio knows,
+    so he could (and should) write a docstring  here
+    """
+
     def __init__(self, interval, function, *args, **kwargs):
         self._timer     = None
         self.function   = function
@@ -44,6 +49,11 @@ class RepeatedTimer(object):
 
 
 class ChangeHandler(FileSystemEventHandler):
+
+    """
+    Defines methods that can be called whenever a change
+    in the filesystem is detected.
+    """
 
     def __init__(self, config, ec2, log):
         self.config = config
@@ -252,6 +262,11 @@ class ChangeHandler(FileSystemEventHandler):
 
 
 class FileSync(LoggingApp):
+
+    """
+    Main class, defines method for reading the configuration,
+    executing commands and running main method.
+    """
 
     def get_config(self):
         try:
