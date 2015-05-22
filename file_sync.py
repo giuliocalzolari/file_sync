@@ -7,6 +7,8 @@ import fnmatch
 import subprocess
 from cli.log import LoggingApp
 
+import schedule
+
 
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
@@ -20,8 +22,14 @@ class RepeatedTimer(object):
 
     def __init__(self, interval, function, *args, **kwargs):
         self._timer     = None
-        self.function   = function
-        self.interval   = interval
+
+        if interval < 10:
+            self.interval   = 10
+        else:
+            self.interval   = interval
+
+
+        self.function   = function   
         self.args       = args
         self.kwargs     = kwargs
         self.is_running = False
@@ -282,49 +290,42 @@ class FileSync(LoggingApp):
         self.log.info("Starting")
         self.log.debug("Getting Config")
         self.get_config()
-        # self.log.debug("Config: " + str(config['hostname']) +
-        #  " as " + str(config['username']))
+
         self.log.debug("directory Selected: " + self.config["basedir"])
 
         self.ec2_auto = {}
+       
+        for cmd_name in self.config["command"]:
+            if self.config["command"][cmd_name]["exec"]:
+                if self.config["command"][cmd_name]["status"] != "enable":
+                    self.log.debug("CMD "+cmd_name+" in disabled mode")
+                    continue
 
-        start = True
-
-        if self.config["command"]:
-            for cmd_name in self.config["command"]:
                 interval = self.config["command"][cmd_name]["refresh"]
-                RepeatedTimer(
-                    interval, self.execute_cmd, self.config["command"][cmd_name]["exec"])
-        else:
-            self.log.debug("No command provided.")
+                schedule.every(interval).seconds.do(self.execute_cmd, self.config["command"][cmd_name]["exec"])
+            else:
+                self.log.warning("No command provided.")
 
 
         while 1:
 
             event_handler = ChangeHandler(self.config, self.ec2_auto, self.log)
             observer = Observer()
-            observer.schedule(
-                event_handler, self.config["basedir"], recursive=True)
+            observer.schedule(event_handler, self.config["basedir"], recursive=True)
             observer.start()
-            t0 = time.time()
             try:
                 while True:
 
                     for repl in self.config["replicator"]:
                         c_url = self.config["replicator"][repl]["url"]
                         if c_url.startswith('ec2://'):
+                            # autodiscovery polling
+                            interval = self.config["replicator"][repl]["refresh"]
+                            schedule.every(interval).seconds.do(self.ec2_update_discovery, self.config["replicator"][repl])
 
-                            t1 = time.time()
-                            if (t1 - t0) >= self.config["replicator"][repl]["refresh"] or start:
-                                self.log.debug(
-                                    "Execute ec2_update_discovery for: " + repl)
-                                self.ec2_auto[c_url.replace(
-                                    'ec2://', "")] = self.ec2_update_discovery(self.config["replicator"][repl])
-                                t0 = t1
-                                start = False
-                                # print self.ec2_auto
 
                     time.sleep(1)
+                    schedule.run_pending()
             except KeyboardInterrupt:
                 quit("Exit")
                 observer.stop()
