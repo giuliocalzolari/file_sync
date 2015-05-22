@@ -8,13 +8,16 @@ this is an example of config.yaml
 
 	command:
 	 syncs3:
-	  refresh: 3600   # second
+	  status: "disable"
+	  refresh: 30   # second
 	  exec: "date >> /tmp/tmp.log"
 	 syncs3bis:
-	  refresh: 3600   # second
+	  status: "disable"
+	  refresh: 60   # second
 	  exec: "date >> /tmp/tmp2.log"
 
 	replicator:
+
 	 bucket1:
 	  status: "disable"
 	  url: "s3://s3-eu-west-1.amazonaws.com"
@@ -22,6 +25,7 @@ this is an example of config.yaml
 	  acces_key: "....."
 	  secret_key: "....."
 	  replace: ["/git/tool/",""] 
+
 	 ec2web:
 	  status: "enable"
 	  url: "ec2://web-autodiscovery"
@@ -29,6 +33,20 @@ this is an example of config.yaml
 	  match_ec2: "web-[0-9]+"
 	  acces_key: "key123"
 	  secret_key: "secter1234"
+
+	 ec2test1:
+	  status: "enable"
+	  url: "sftp://1.1.1.1"
+	  private_key: "/path/.ssh/private.key"
+	  username: "ubuntu"
+	  replace: ["/git/tool/",""] 
+
+	 ec2test2:
+	  status: "enable"
+	  url: "sftp://2.2.2.2"
+	  password: "password"
+	  username: "ubuntu"
+	  replace: ["/git/tool/",""] 
 
 
 

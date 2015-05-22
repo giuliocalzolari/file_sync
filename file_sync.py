@@ -6,9 +6,14 @@ import os
 import fnmatch
 import subprocess
 from cli.log import LoggingApp
+from stat import S_ISDIR
+import paramiko
+import StringIO
 
 import schedule
 
+import boto
+from boto.s3.key import Key
 
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
@@ -18,17 +23,53 @@ from threading import Timer
 __author__ = ['Giulio.Calzolari']
 
 
+def mkdir_p(sftp, remote_directory):
+    dir_path = str()
+    for dir_folder in remote_directory.split("/"):
+        if dir_folder == "":
+            continue
+        dir_path += r"/{0}".format(dir_folder)
+        try:
+            sftp.listdir(dir_path)
+        except IOError:
+            sftp.mkdir(dir_path)
+
+def isdir(sftp,path):
+    try:
+        return S_ISDIR(sftp.stat(path).st_mode)
+    except IOError:
+        return False
+
+def rm_rf(sftp, path):
+    if isdir(sftp,filepath):
+        rm_rf(sftp,filepath)
+
+    files = sftp.listdir(path=path)
+    # if not path.endswith("/"):
+    #     path = "%s/" % path
+
+    if not len(files):
+        sftp.rmdir(path)
+        return
+
+    for f in files:
+        filepath = "%s/%s" % (path, f)
+        if isdir(sftp,filepath):
+            rm_rf(sftp,filepath)
+        else:
+            sftp.remove(filepath)
+
 class ChangeHandler(FileSystemEventHandler):
 
     def __init__(self, config, ec2, log):
         self.config = config
         self.log = log
         self.ec2_auto = ec2
+        self.delete_queue_sftp = []
 
-    def push_to_s3(self, sourcepath):
+    def push_to_s3(self,event ):
+        sourcepath = event.src_path
         try:
-            import boto
-            from boto.s3.key import Key
 
             if self.current_repl["replace"] != "":
                 destpath = sourcepath.replace(
@@ -75,10 +116,9 @@ class ChangeHandler(FileSystemEventHandler):
             print e
             pass
 
-    def delete_s3(self, file_name_dest):
+    def delete_to_s3(self,event ):
+        file_name_dest = event.src_path
         try:
-            import boto
-            from boto.s3.key import Key
 
             if self.current_repl["replace"] != "":
                 file_name = file_name_dest.replace(
@@ -108,56 +148,97 @@ class ChangeHandler(FileSystemEventHandler):
             self.log.error('*** Caught exception: %s: %s' % (e.__class__, e))
             pass
 
-    def push_to_sftp(self, sourcepath):
-        # Paramiko client configuration
-        UseGSSAPI = True             # enable GSS-API / SSPI authentication
-        DoGSSAPIKeyExchange = True
-        Port = 22
 
-        destpath = sourcepath
-
+    def open_ssh(self):
         try:
-            import paramiko
-            import StringIO
 
-            f = open(self.current_repl["private_key"], 'r').read()
             ssh = paramiko.SSHClient()
+            ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
-            keyfile = StringIO.StringIO(f)
-            mykey = paramiko.RSAKey.from_private_key(keyfile)
-            # ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-            ssh.connect(self.current_repl["url"].replace("sftp://",""),
-                        username=self.current_repl["username"], pkey=mykey)
-            sftp = ssh.open_sftp()
-            if os.path.isfile(sourcepath):
-                sftp.put(sourcepath, target)
+            if "private_key" in self.current_repl:
+                self.log.debug("connect wit private_key to:"+self.current_repl["url"])
+                f = open(self.current_repl["private_key"], 'r').read()
+                mykey = paramiko.RSAKey.from_private_key(StringIO.StringIO(f))
+                ssh.connect(self.current_repl["url"].replace("sftp://",""), username=self.current_repl["username"], pkey=mykey)
+            elif "password" in self.current_repl:
+                self.log.debug("connect wit pass to:"+self.current_repl["url"])
+                ssh.connect(self.current_repl["url"].replace("sftp://",""), username=self.current_repl["username"], password=self.current_repl["password"])
             else:
-                try:
-                    sftp.mkdir(destpath)
-                except IOError:
-                    pass
-                sftp.close()
+                self.log.error("error invalid login credential")
+                return False
 
-            # dirlist on remote host
-            # dirlist = sftp.listdir('.')
-            # print("Dirlist: %s" % dirlist)
-
-            # copy this demo onto the server
-            # try:
-            #     sftp.mkdir("demo_sftp_folder")
-            # except IOError:
-            #     print('(assuming demo_sftp_folder/ already exists)')
-            # with sftp.open('demo_sftp_folder/README', 'w') as f:
-            #     f.write('This was created by demo_sftp.py.\n')
-            # with open('demo_sftp.py', 'r') as f:
-            #     data = f.read()
-            # sftp.open('demo_sftp_folder/demo_sftp.py', 'w').write(data)
-            # print('created demo_sftp_folder/ on the server')
+            return ssh
         except Exception as e:
             self.log.error('*** Caught exception: %s: %s' % (e.__class__, e))
             # print traceback.print_exc()
             pass
-            # traceback.print_exc()
+            
+
+    def push_to_sftp(self,event ):
+        sourcepath = event.src_path
+        # Paramiko client configuration
+
+        if self.current_repl["replace"] != "":
+            destpath = sourcepath.replace(
+            self.current_repl["replace"][0], self.current_repl["replace"][1])
+        else:
+            destpath = sourcepath
+
+        ssh = self.open_ssh()
+        sftp = ssh.open_sftp()
+
+        try:
+            if event.is_directory:
+                mkdir_p(sftp,destpath)
+            else:
+                sftp.put(sourcepath, destpath)    
+        except Exception as e:
+            mkdir_p(sftp,os.path.dirname(destpath))
+            sftp.put(sourcepath, destpath)
+            pass
+        sftp.close()
+
+
+
+
+
+
+
+    def delete_to_sftp(self, event ):
+        sourcepath = event.src_path
+        if self.current_repl["replace"] != "":
+            destpath = sourcepath.replace(
+            self.current_repl["replace"][0], self.current_repl["replace"][1])
+            
+        else:
+            destpath = sourcepath
+
+
+        ssh = self.open_ssh()
+        sftp = ssh.open_sftp()
+
+
+        try:
+            if event.is_directory:
+                print "rmdir "+destpath 
+                sftp.rmdir(destpath)
+            else:
+                print "remove "+destpath 
+                sftp.unlink(destpath)
+
+            # replay deleting directory in reverse order
+            for dir_queue in self.delete_queue_sftp:
+                sftp.rmdir(dir_queue)
+
+        except Exception as e:
+            if event.is_directory:
+                self.delete_queue_sftp.insert(0,destpath)
+            else:
+                self.log.error('*** Caught exception: %s: %s' % (e.__class__, e))
+            pass
+
+        
+        sftp.close()
 
     def put_action(self, event):
         self.log.info("put_action " + event.src_path)
@@ -169,10 +250,10 @@ class ChangeHandler(FileSystemEventHandler):
             self.current_repl = self.config["replicator"][repl]
 
             if c_url.startswith('s3://'):
-                self.push_to_s3(event.src_path)
+                self.push_to_s3(event)
 
             if c_url.startswith('sftp://'):
-                self.push_to_sftp(event.src_path)
+                self.push_to_sftp(event)
 
             if c_url.startswith('ec2://'):
                 print self.ec2_auto
@@ -190,15 +271,17 @@ class ChangeHandler(FileSystemEventHandler):
             self.current_repl = self.config["replicator"][repl]
 
             if c_url.startswith('s3://'):
-                self.delete_s3(event.src_path)
-
+                self.delete_to_s3(event)
             if c_url.startswith('sftp://'):
-                self.delete_sftp(event.src_path)
+                self.delete_to_sftp(event)
 
     def on_created(self, event):
         self.log.debug("on_created: " + event.src_path)
 
-        for patt in self.config["patterns"]:
+        if event.is_directory:
+            self.put_action(event)
+
+        for patt in self.config["patterns"]:   
             if fnmatch.fnmatch(event.src_path, patt):
                 self.put_action(event)
 
@@ -211,6 +294,8 @@ class ChangeHandler(FileSystemEventHandler):
 
     def on_deleted(self, event):
         self.log.debug("on_deleted: " + event.src_path)
+        if event.is_directory:
+            self.delete_action(event)
 
         for patt in self.config["patterns"]:
             if fnmatch.fnmatch(event.src_path, patt):
@@ -244,9 +329,6 @@ class FileSync(LoggingApp):
         else:
             self.log.debug("success on execute_cmd: " + cmd)
 
-    def job():
-        print("I'm working...")
-
     def ec2_update_discovery(self, repl):
         self.log.info("get all instances match: " + repl["match_ec2"])
         return ["web-001.compute-1.amazonaws.com",
@@ -274,7 +356,6 @@ class FileSync(LoggingApp):
             c_url = self.config["replicator"][repl]["url"]
             if self.config["replicator"][repl]["status"] != "enable":
                 continue
-            
             if c_url.startswith('ec2://'):
                 # autodiscovery polling
                 interval = self.config["replicator"][repl]["refresh"]
@@ -286,14 +367,12 @@ class FileSync(LoggingApp):
 
     def main(self):
         self.log.info("Starting")
+        self.get_config()
         self.log.debug("directory Selected: " + self.config["basedir"])
 
-        self.get_config()
         self.config_scheduled_cmd()
         self.ec2_autodiscovery()
-        
-        
-       
+
         while 1:
 
             event_handler = ChangeHandler(self.config, self.ec2_auto, self.log)
