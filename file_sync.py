@@ -121,11 +121,12 @@ class ChangeHandler(FileSystemEventHandler):
             import StringIO
 
             f = open(self.current_repl["private_key"], 'r').read()
+            ssh = paramiko.SSHClient()
 
             keyfile = StringIO.StringIO(f)
             mykey = paramiko.RSAKey.from_private_key(keyfile)
             # ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-            ssh.connect('myserver.compute-1.amazonaws.com',
+            ssh.connect(self.current_repl["url"].replace("sftp://",""),
                         username=self.current_repl["username"], pkey=mykey)
             sftp = ssh.open_sftp()
             if os.path.isfile(sourcepath):
@@ -230,6 +231,7 @@ class FileSync(LoggingApp):
 
     def get_config(self):
         try:
+            self.last_load = os.path.getmtime(self.params.config)
             self.config = yaml.load(open(self.params.config))
         except IOError as e:
             self.log.debug(e)
@@ -250,28 +252,37 @@ class FileSync(LoggingApp):
         return ["web-001.compute-1.amazonaws.com",
                 "web-002.compute-1.amazonaws.com"]
 
+    def config_scheduled_cmd(self):
+        for cmd_name in self.config["command"]:
+            if self.config["command"][cmd_name]["exec"]:
+                if self.config["command"][cmd_name]["status"] != "enable":
+                    self.log.debug("CMD "+cmd_name+" in disabled mode")
+                    continue
+                else:
+                    self.log.debug("CMD "+cmd_name+" in enabled mode")
+
+                interval = self.config["command"][cmd_name]["refresh"]
+                schedule.every(interval).seconds.do(self.execute_cmd, self.config["command"][cmd_name]["exec"])
+            else:
+                self.log.warning("No command provided.")
+
 
 # ===========================MAIN===========================#
 
     def main(self):
         self.log.info("Starting")
         self.log.debug("Getting Config")
+
         self.get_config()
+        self.config_scheduled_cmd()
+
+        
 
         self.log.debug("directory Selected: " + self.config["basedir"])
 
         self.ec2_auto = {}
        
-        for cmd_name in self.config["command"]:
-            if self.config["command"][cmd_name]["exec"]:
-                if self.config["command"][cmd_name]["status"] != "enable":
-                    self.log.debug("CMD "+cmd_name+" in disabled mode")
-                    continue
 
-                interval = self.config["command"][cmd_name]["refresh"]
-                schedule.every(interval).seconds.do(self.execute_cmd, self.config["command"][cmd_name]["exec"])
-            else:
-                self.log.warning("No command provided.")
 
 
         while 1:
@@ -283,8 +294,18 @@ class FileSync(LoggingApp):
             try:
                 while True:
 
+                    if os.path.getmtime(self.params.config) != self.last_load:
+                        self.log.info("Config change reloading data")
+                        self.get_config()
+                        schedule.clear()
+                        self.config_scheduled_cmd()
+
+
+
                     for repl in self.config["replicator"]:
                         c_url = self.config["replicator"][repl]["url"]
+                        if self.config["replicator"][repl]["status"] != "enable":
+                            continue
                         if c_url.startswith('ec2://'):
                             # autodiscovery polling
                             interval = self.config["replicator"][repl]["refresh"]
