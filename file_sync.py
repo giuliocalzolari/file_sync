@@ -271,15 +271,11 @@ class FileSync(LoggingApp):
 
     def main(self):
         self.log.info("Starting")
-        self.log.debug("Getting Config")
+        self.log.debug("directory Selected: " + self.config["basedir"])
 
         self.get_config()
         self.config_scheduled_cmd()
-
         
-
-        self.log.debug("directory Selected: " + self.config["basedir"])
-
         self.ec2_auto = {}
        
 
