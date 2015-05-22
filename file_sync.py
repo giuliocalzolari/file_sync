@@ -266,6 +266,21 @@ class FileSync(LoggingApp):
             else:
                 self.log.warning("No command provided.")
 
+    def ec2_autodiscovery(self):
+
+        self.ec2_auto = {}
+
+        for repl in self.config["replicator"]:
+            c_url = self.config["replicator"][repl]["url"]
+            if self.config["replicator"][repl]["status"] != "enable":
+                continue
+            
+            if c_url.startswith('ec2://'):
+                # autodiscovery polling
+                interval = self.config["replicator"][repl]["refresh"]
+                schedule.every(interval).seconds.do(self.ec2_update_discovery, self.config["replicator"][repl])
+
+
 
 # ===========================MAIN===========================#
 
@@ -275,12 +290,10 @@ class FileSync(LoggingApp):
 
         self.get_config()
         self.config_scheduled_cmd()
+        self.ec2_autodiscovery()
         
-        self.ec2_auto = {}
+        
        
-
-
-
         while 1:
 
             event_handler = ChangeHandler(self.config, self.ec2_auto, self.log)
@@ -293,19 +306,12 @@ class FileSync(LoggingApp):
                     if os.path.getmtime(self.params.config) != self.last_load:
                         self.log.info("Config change reloading data")
                         self.get_config()
+
                         schedule.clear()
+
                         self.config_scheduled_cmd()
+                        self.ec2_autodiscovery()
 
-
-
-                    for repl in self.config["replicator"]:
-                        c_url = self.config["replicator"][repl]["url"]
-                        if self.config["replicator"][repl]["status"] != "enable":
-                            continue
-                        if c_url.startswith('ec2://'):
-                            # autodiscovery polling
-                            interval = self.config["replicator"][repl]["refresh"]
-                            schedule.every(interval).seconds.do(self.ec2_update_discovery, self.config["replicator"][repl])
 
 
                     time.sleep(1)
@@ -325,10 +331,6 @@ if __name__ == "__main__":
     fs = FileSync()
     # fs.add_param("-f", "--farm", help="Which vSphere you want to connect to in your config", default=None, required=True, action="store")
     # fs.add_param("-m", "--mode", help="What to make foreman do. Excepted Values: ['index','create','command','script','snapshot','powercycle','filedrop',todo']", default=None, required=True, action="store")
-    fs.add_param(
-        "-d", "--detail", help="What to search for: ['datastore','vms','hostsystems','dvport','templates','resourcepool','datacentres','folders','vlans']", default=None, required=False, action="store")
-    fs.add_param("-e", "--extra", help="Extra detail to add to a given mode",
-                 default=None, required=False, action="store")
     fs.add_param("-c", "--config", help="Change the Configuration file to use",
                  default="./config.yaml", required=False, action="store")
     fs.run()
