@@ -33,6 +33,11 @@ this is an example of config.yaml
 	  match_ec2: "web-[0-9]+"
 	  acces_key: "key123"
 	  secret_key: "secter1234"
+  	  mapping: "public_ip_address"  # private_ip_address , public_ip_address , public_dns_name , private_dns_name 
+      region: "eu-central-1"
+      private_key: "/path/.ssh/private.key"
+      username: "ubuntu"
+      replace: ["/Users/giuliocalzolari/git/tool/file_sync/test_scan/","/tmp/"]
 
 	 ec2test1:
 	  status: "enable"

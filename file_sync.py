@@ -11,8 +11,10 @@ import paramiko
 import StringIO
 
 import schedule
+from pprint import pprint
 
 import boto
+import boto.ec2
 from boto.s3.key import Key
 
 from watchdog.observers import Observer
@@ -200,10 +202,6 @@ class ChangeHandler(FileSystemEventHandler):
 
 
 
-
-
-
-
     def delete_to_sftp(self, event ):
         sourcepath = event.src_path
         if self.current_repl["replace"] != "":
@@ -216,14 +214,10 @@ class ChangeHandler(FileSystemEventHandler):
 
         ssh = self.open_ssh()
         sftp = ssh.open_sftp()
-
-
         try:
             if event.is_directory:
-                print "rmdir "+destpath 
                 sftp.rmdir(destpath)
             else:
-                print "remove "+destpath 
                 sftp.unlink(destpath)
 
             # replay deleting directory in reverse order
@@ -256,9 +250,10 @@ class ChangeHandler(FileSystemEventHandler):
                 self.push_to_sftp(event)
 
             if c_url.startswith('ec2://'):
-                print self.ec2_auto
-                for ec2 in self.ec2_auto:
-                    self.log.info("put_action to: " + ec2)
+                for ec2_id, ec2_ip in self.ec2_auto.iteritems():
+                    self.current_repl["url"] = 'sftp://'+ ec2_ip
+                    # self.log.info("put_action to instance : "+ec2_id+" IP:"+  ec2_ip)
+                    self.push_to_sftp(event)
 
     def delete_action(self, event):
         self.log.info("delete_action " + event.src_path)
@@ -274,6 +269,11 @@ class ChangeHandler(FileSystemEventHandler):
                 self.delete_to_s3(event)
             if c_url.startswith('sftp://'):
                 self.delete_to_sftp(event)
+            if c_url.startswith('ec2://'):
+                for ec2_id, ec2_ip in self.ec2_auto.iteritems():
+                    self.current_repl["url"] = 'sftp://'+ ec2_ip
+                    # self.log.info("put_action to instance : "+ec2_id+" IP:"+  ec2_ip)
+                    self.push_to_sftp(event)
 
     def on_created(self, event):
         self.log.debug("on_created: " + event.src_path)
@@ -331,8 +331,30 @@ class FileSync(LoggingApp):
 
     def ec2_update_discovery(self, repl):
         self.log.info("get all instances match: " + repl["match_ec2"])
-        return ["web-001.compute-1.amazonaws.com",
-                "web-002.compute-1.amazonaws.com"]
+
+        self.ec2_auto = {}
+        ec2_conn = boto.ec2.connect_to_region(repl["region"],aws_access_key_id=repl["acces_key"],aws_secret_access_key=repl["secret_key"])
+        reservations = ec2_conn.get_all_instances()
+        instances = [i for r in reservations for i in r.instances]
+        for i in instances:
+            # pprint(i.__dict__)
+            if fnmatch.fnmatch(i.tags["Name"], repl["match_ec2"]):
+                self.log.info("found new instances: " + i.tags["Name"])
+                if repl["mapping"] == "public_ip_address":
+                    self.ec2_auto[i.id] = i.ip_address
+                if repl["mapping"] == "private_ip_address":
+                    self.ec2_auto[i.id] = i.private_ip_address
+                if repl["mapping"] == "public_dns_name":
+                    self.ec2_auto[i.id] = i.public_dns_name
+                if repl["mapping"] == "public_dns_name":
+                    self.ec2_auto[i.id] = i.private_dns_name
+
+        f = open(os.path.dirname(os.path.abspath(self.params.config))+"/autodiscovery.txt",'w+')
+        for ec2_id, ec2_ip in self.ec2_auto.iteritems():
+            f.write(ec2_id+":"+  ec2_ip+"\n")
+        f.close()
+
+
 
     def config_scheduled_cmd(self):
         for cmd_name in self.config["command"]:
@@ -350,14 +372,13 @@ class FileSync(LoggingApp):
 
     def ec2_autodiscovery(self):
 
-        self.ec2_auto = {}
-
         for repl in self.config["replicator"]:
             c_url = self.config["replicator"][repl]["url"]
             if self.config["replicator"][repl]["status"] != "enable":
                 continue
             if c_url.startswith('ec2://'):
                 # autodiscovery polling
+                self.ec2_update_discovery(self.config["replicator"][repl])
                 interval = self.config["replicator"][repl]["refresh"]
                 schedule.every(interval).seconds.do(self.ec2_update_discovery, self.config["replicator"][repl])
 
